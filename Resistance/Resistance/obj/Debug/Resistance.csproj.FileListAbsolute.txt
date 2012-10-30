@@ -1,0 +1,6 @@
+c:\users\joseph.taylor\documents\visual studio 2012\Projects\Resistance\Resistance\bin\Debug\Resistance.exe.config
+c:\users\joseph.taylor\documents\visual studio 2012\Projects\Resistance\Resistance\bin\Debug\Resistance.exe
+c:\users\joseph.taylor\documents\visual studio 2012\Projects\Resistance\Resistance\bin\Debug\Resistance.pdb
+c:\users\joseph.taylor\documents\visual studio 2012\Projects\Resistance\Resistance\obj\Debug\Resistance.csprojResolveAssemblyReference.cache
+c:\users\joseph.taylor\documents\visual studio 2012\Projects\Resistance\Resistance\obj\Debug\Resistance.exe
+c:\users\joseph.taylor\documents\visual studio 2012\Projects\Resistance\Resistance\obj\Debug\Resistance.pdb
