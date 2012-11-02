@@ -8,5 +8,9 @@ namespace Resistance
 {
     public interface IMission
     {
+        int OperativeCount { get; }
+        int SabotageThreshold { get; }
+
+        Task<bool> PerformMission( IEnumerable<IOperative> operatives );
     }
 }

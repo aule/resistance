@@ -8,5 +8,6 @@ namespace Resistance
 {
     public interface IOperative
     {
+        Task<bool> PerformMission(IMission mission);
     }
 }
