@@ -14,13 +14,15 @@ namespace Resistance
         //int Successes { get; }
         //int Failures { get; }
 
+        event EventHandler RolesAssigned;
         event EventHandler LeaderChanged;
-        //event EventHandler OperativesChosen;
-        //event EventHandler MissionStarting;
-        //event EventHandler MissionCompleted;
-        //event EventHandler GameOver;
+        event EventHandler OperativesChosen;
+        event EventHandler MissionStarting;
+        event EventHandler MissionCompleted;
+        event EventHandler GameOver;
 
         bool SelectLeader(IPlayer leader);
+        bool SelectSpies(IEnumerable<IPlayer> spies);
         //bool ChooseOperatives(IEnumerable<IPlayer> operatives);
 
 
