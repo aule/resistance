@@ -47,8 +47,11 @@
     <Compile Include="IMission.cs" />
     <Compile Include="IOperative.cs" />
     <Compile Include="IPlayer.cs" />
+    <Compile Include="IVote.cs" />
+    <Compile Include="IVoter.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Vote.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />

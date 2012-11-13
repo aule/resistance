@@ -6,9 +6,8 @@ using System.Threading.Tasks;
 
 namespace Resistance
 {
-    public interface IPlayer : IOperative, IVoter
+    public interface IVote
     {
-        void AssignedToResistance();
-        void AssignedToSpies(IEnumerable<IPlayer> spies);
+        Task<bool> CallVote(IEnumerable<IVoter> voters );
     }
 }
