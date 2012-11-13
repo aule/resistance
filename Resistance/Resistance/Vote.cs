@@ -16,6 +16,12 @@ namespace Resistance
 
         public Task<bool> CallVote(IEnumerable<IVoter> voters)
         {
+            if(_voteCompletionSource != null && !_voteCompletionSource.Task.IsCompleted)
+            {
+                TaskCompletionSource<bool> taskCompletionSource = new TaskCompletionSource<bool>();
+                taskCompletionSource.SetCanceled();
+                return taskCompletionSource.Task;
+            }
             List<IVoter> votersList = (voters ?? Enumerable.Empty<IVoter>()).ToList();
             _votesRemaining = votersList.Count;
             _yesVotes = _noVotes = 0;
