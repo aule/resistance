@@ -55,7 +55,16 @@ namespace Resistance
 
         private void AnnounceRoles()
         {
-            
+            foreach (IPlayer player in _players)
+            {
+                if( _spies.Contains(player) )
+                {
+                    player.AssignedToSpies(_spies.AsReadOnly());
+                } else
+                {
+                    player.AssignedToResistance();
+                }
+            }
         }
 
         public bool SelectSpies(IEnumerable<IPlayer> spies)

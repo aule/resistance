@@ -8,6 +8,7 @@ namespace Resistance
 {
     public interface IPlayer : IOperative
     {
- 
+        void AssignedToResistance();
+        void AssignedToSpies(IEnumerable<IPlayer> spies);
     }
 }
