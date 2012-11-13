@@ -10,6 +10,8 @@ namespace Resistance
     {
         int PlayerCount { get; }
         IPlayer Leader { get; }
+        IList<IPlayer> Players { get; }
+        IList<IMission> Missions { get; }
         GameState State { get; }
         //int Successes { get; }
         //int Failures { get; }

@@ -17,8 +17,10 @@ namespace Resistance
         public event EventHandler GameOver;
 
         public GameState State { get; private set; }
-        public List<IPlayer> Players { get; private set; }
-        public List<IMission> Missions { get; private set; }
+        private readonly List<IPlayer> _players;
+        public IList<IPlayer> Players { get { return _players.AsReadOnly(); } }
+        private readonly List<IMission> _missions;
+        public IList<IMission> Missions { get { return _missions.AsReadOnly(); } } 
         public int PlayerCount { get; private set; }
 
         private IPlayer _leader;
@@ -28,16 +30,16 @@ namespace Resistance
 
         public Game(IEnumerable<IPlayer> players, IEnumerable<IMission> missions )
         {
-            Players = (players ?? Enumerable.Empty<IPlayer>()).ToList();
-            Missions = (missions ?? Enumerable.Empty<IMission>()).ToList();
-            PlayerCount = Players.Count();
+            _players = (players ?? Enumerable.Empty<IPlayer>()).ToList();
+            _missions = (missions ?? Enumerable.Empty<IMission>()).ToList();
+            PlayerCount = _players.Count();
 
             State = GameState.NotReady;
         }
 
         private bool PlayerIsInGame(IPlayer player)
         {
-            return Players.Contains(player);
+            return _players.Contains(player);
         }
 
         public bool SelectLeader(IPlayer leader)
