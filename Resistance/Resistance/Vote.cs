@@ -16,20 +16,30 @@ namespace Resistance
 
         public Task<bool> CallVote(IEnumerable<IVoter> voters)
         {
+            // Check if a vote is already in process
             if(_voteCompletionSource != null && !_voteCompletionSource.Task.IsCompleted)
             {
+                // Create a task in a cancelled state then return it
                 TaskCompletionSource<bool> taskCompletionSource = new TaskCompletionSource<bool>();
                 taskCompletionSource.SetCanceled();
                 return taskCompletionSource.Task;
             }
+            
+            // Ensure the voters are enumerated only once, and convert nulls to empty lists
             List<IVoter> votersList = (voters ?? Enumerable.Empty<IVoter>()).ToList();
+            
+            // Prepare the initial state for the vote
             _votesRemaining = votersList.Count;
             _yesVotes = _noVotes = 0;
             _voteCompletionSource = new TaskCompletionSource<bool>();
+            
+            // Call RequestVote on each voter, and pass the results to CastVote
             foreach (IVoter voter in votersList)
             {
                 voter.RequestVote().ContinueWith(CastVote);
             }
+            
+            // Return a task which can be controlled using _voteCompletionSource
             return _voteCompletionSource.Task;
         }
 
@@ -51,6 +61,7 @@ namespace Resistance
         private void CountVote()
         {
             bool result = _yesVotes > _noVotes;
+            // Mark the task returned by CallVote as completed, and set the result of the vote
             _voteCompletionSource.TrySetResult(result);
         }
     }
