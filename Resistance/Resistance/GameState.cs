@@ -11,6 +11,7 @@ namespace Resistance
     {
         NotReady,
         SelectingLeader,
+        WaitingForMission,
         SelectingMissionOperatives,
         Voting,
         Mission,

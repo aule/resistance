@@ -10,5 +10,7 @@ namespace Resistance
     {
         void AssignedToResistance();
         void AssignedToSpies(IEnumerable<IPlayer> spies);
+
+        Task<IEnumerable<IPlayer>> ChooseOperatives(IMission mission);
     }
 }

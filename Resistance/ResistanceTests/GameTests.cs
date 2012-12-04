@@ -2,6 +2,8 @@
 using System.Text;
 using System.Linq;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Moq;
 using Resistance;
@@ -14,16 +16,28 @@ namespace ResistanceTests
     [TestClass]
     public class GameTests
     {
+        // Specifies the time in milliseconds to wait for asyncronous code to complete
+        private const int TimeoutForAsyncCode = 100;
+
         private Game PrepareFreshGame(IEnumerable<IPlayer> players, IEnumerable<IMission> missions)
         {
             return new Game(players, missions);
         }
 
-        private Game PrepareGameInSelectLeaderState(IEnumerable<IPlayer> players, IEnumerable<IMission> missions, IEnumerable<IPlayer> spies = null )
+        private Game PrepareGameInSelectLeaderState(IEnumerable<IPlayer> players, IEnumerable<IMission> missions, IEnumerable<IPlayer> spies = null)
         {
             Game game = new Game(players, missions);
             game.SelectSpies(spies);
-            Assert.AreEqual(GameState.SelectingLeader,game.State);
+            Assert.AreEqual(GameState.SelectingLeader, game.State);
+            return game;
+        }
+
+        private Game PrepareGameInWaitingForMissionState(IEnumerable<IPlayer> players, IEnumerable<IMission> missions, IEnumerable<IPlayer> spies = null, IPlayer leader = null)
+        {
+            Game game = new Game(players, missions);
+            game.SelectSpies(spies);
+            game.SelectLeader(leader ?? game.Players.First());
+            Assert.AreEqual(GameState.WaitingForMission, game.State);
             return game;
         }
 
@@ -65,7 +79,7 @@ namespace ResistanceTests
         {
             List<IPlayer> players = GeneneratePlayerStubs(8);
             Game game = PrepareFreshGame(players, null);
-            CollectionAssert.AreEquivalent(players, game.Players.ToList());
+            CollectionAssert.AreEqual(players, game.Players.ToList());
         }
 
         [TestMethod]
@@ -73,7 +87,7 @@ namespace ResistanceTests
         {
             List<IMission> missions = GenenerateMissionStubs(5);
             Game game = PrepareFreshGame(null, missions);
-            CollectionAssert.AreEquivalent(missions, game.Missions.ToList());
+            CollectionAssert.AreEqual(missions, game.Missions.ToList());
         }
 
         [TestMethod]
@@ -196,12 +210,12 @@ namespace ResistanceTests
         }
 
         [TestMethod]
-        public void SelectLeader_ValidLeader_StateChangesToSelectingMissionOperatives()
+        public void SelectLeader_ValidLeader_StateChangesToWaitingForMission()
         {
             List<IPlayer> players = GeneneratePlayerStubs(7);
             Game game = PrepareGameInSelectLeaderState(players, null);
             game.SelectLeader(players[5]);
-            Assert.AreEqual(GameState.SelectingMissionOperatives, game.State);
+            Assert.AreEqual(GameState.WaitingForMission, game.State);
         }
 
         [TestMethod]
@@ -270,6 +284,122 @@ namespace ResistanceTests
             game.LeaderChanged += (o, i) => { eventCalled++; };
             game.SelectLeader(GeneneratePlayerStub());
             Assert.AreEqual(0, eventCalled, "Leader changed event should not be called if the player is not in the game.");
+        }
+
+        [TestMethod]
+        public void StartMission_StateIsNotWaitingForMission_ReturnsFalse()
+        {
+            List<IPlayer> players = GeneneratePlayerStubs(6);
+            List<IMission> missions = GenenerateMissionStubs(5);
+            Game game = PrepareGameInSelectLeaderState(players, missions);
+            Assert.IsFalse(game.StartMission(missions.First()));
+        }
+
+        [TestMethod]
+        public void StartMission_MissionNotInGame_ReturnsFalse()
+        {
+            List<IPlayer> players = GeneneratePlayerStubs(6);
+            List<IMission> missions = GenenerateMissionStubs(5);
+            Game game = PrepareGameInWaitingForMissionState(players, missions);
+            IMission missionNotInGame = GenenerateMissionStub();
+            Assert.IsFalse(game.StartMission(missionNotInGame));
+        }
+
+        [TestMethod]
+        public void StartMission_MissionNotInGame_StateIsUnchanged()
+        {
+            List<IPlayer> players = GeneneratePlayerStubs(6);
+            List<IMission> missions = GenenerateMissionStubs(5);
+            Game game = PrepareGameInWaitingForMissionState(players, missions);
+            IMission missionNotInGame = GenenerateMissionStub();
+            game.StartMission(missionNotInGame);
+            Assert.AreEqual(GameState.WaitingForMission,game.State);
+        }
+
+        [TestMethod]
+        public void StartMission_ValidMission_ReturnsTrue()
+        {
+            List<IPlayer> players = GeneneratePlayerStubs(6);
+            List<IMission> missions = GenenerateMissionStubs(5);
+            Game game = PrepareGameInWaitingForMissionState(players, missions);
+            Assert.IsTrue(game.StartMission(missions.First()));
+        }
+
+        [TestMethod]
+        public void StartMission_ValidMission_CurrentMissionIsSet()
+        {
+            List<IPlayer> players = GeneneratePlayerStubs(6);
+            List<IMission> missions = GenenerateMissionStubs(5);
+            IMission nextMission = missions.Last();
+            Game game = PrepareGameInWaitingForMissionState(players, missions);
+            game.StartMission(nextMission);
+            Assert.AreEqual(nextMission, game.CurrentMission);
+        }
+
+        [TestMethod]
+        public void StartMission_ValidMission_StateChangesToSelectingMissionOperatives()
+        {
+            List<IPlayer> players = GeneneratePlayerStubs(6);
+            List<IMission> missions = GenenerateMissionStubs(5);
+            Game game = PrepareGameInWaitingForMissionState(players, missions);
+            game.StartMission(missions.First());
+            Assert.AreEqual(GameState.SelectingMissionOperatives, game.State);
+        }
+
+        [TestMethod]
+        public void StartMission_ValidMission_MissionRemovedFromList()
+        {
+            List<IPlayer> players = GeneneratePlayerStubs(6);
+            List<IMission> missions = GenenerateMissionStubs(5);
+            IMission nextMission = missions.Last();
+            Game game = PrepareGameInWaitingForMissionState(players, missions);
+            game.StartMission(nextMission);
+            CollectionAssert.DoesNotContain(game.Missions.ToList(),nextMission);
+        }
+
+        [TestMethod]
+        public void StartMission_ValidMission_ChooseOperativesCalledOnLeader()
+        {
+            Mock<IPlayer> leaderMock = new Mock<IPlayer>();
+            IPlayer leader = leaderMock.Object;
+            List<IPlayer> players = GeneneratePlayerStubs(6);
+            players.Add(leader);
+            List<IMission> missions = GenenerateMissionStubs(5);
+            IMission nextMission = missions.Last();
+            Game game = PrepareGameInWaitingForMissionState(players, missions, leader: leader);
+            game.StartMission(nextMission);
+            leaderMock.Verify(player => player.ChooseOperatives(nextMission), Times.Once());
+        }
+
+        [TestMethod]
+        public void StartMission_PlayerChoosesOperatives_OperativesChosenEventFired()
+        {
+            Mock<IPlayer> leaderMock = new Mock<IPlayer>();
+
+            // Use a TaskCompletionSource to mock the Task representing the player choosing
+            TaskCompletionSource<IEnumerable<IPlayer>> choiceCompletionSource = new TaskCompletionSource<IEnumerable<IPlayer>>();
+            leaderMock.Setup(player => player.ChooseOperatives(It.IsAny<IMission>()))
+                      .Returns(choiceCompletionSource.Task);
+
+            IPlayer leader = leaderMock.Object;
+            List<IPlayer> players = GeneneratePlayerStubs(6);
+            players.Add(leader);
+            List<IMission> missions = GenenerateMissionStubs(5);
+            IMission nextMission = missions.Last();
+            Game game = PrepareGameInWaitingForMissionState(players, missions, leader: leader);
+
+            // Subscribe to the event to observe it, using an AutoResetEvent to wait for async code to run
+            int eventCalled = 0;
+            AutoResetEvent eventTriggeredNotifier = new AutoResetEvent(false);
+            game.OperativesChosen += (o, i) => { 
+                eventCalled++;
+                eventTriggeredNotifier.Set();
+            };
+
+            game.StartMission(nextMission);
+            choiceCompletionSource.SetResult(Enumerable.Empty<IPlayer>());
+            Assert.IsTrue(eventTriggeredNotifier.WaitOne(TimeoutForAsyncCode));
+            Assert.AreEqual(1,eventCalled);
         }
 
     }

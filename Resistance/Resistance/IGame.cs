@@ -10,8 +10,9 @@ namespace Resistance
     {
         int PlayerCount { get; }
         IPlayer Leader { get; }
-        IList<IPlayer> Players { get; }
-        IList<IMission> Missions { get; }
+        IEnumerable<IPlayer> Players { get; }
+        IEnumerable<IMission> Missions { get; }
+        IMission CurrentMission { get; }
         GameState State { get; }
         //int Successes { get; }
         //int Failures { get; }
@@ -25,8 +26,7 @@ namespace Resistance
 
         bool SelectLeader(IPlayer leader);
         bool SelectSpies(IEnumerable<IPlayer> spies);
-        //bool ChooseOperatives(IEnumerable<IPlayer> operatives);
-
+        bool StartMission(IMission nextMission);
 
     }
 }

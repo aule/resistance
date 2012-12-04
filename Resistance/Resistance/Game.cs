@@ -18,9 +18,10 @@ namespace Resistance
 
         public GameState State { get; private set; }
         private readonly List<IPlayer> _players;
-        public IList<IPlayer> Players { get { return _players.AsReadOnly(); } }
+        public IEnumerable<IPlayer> Players { get { return _players.AsReadOnly(); } }
         private readonly List<IMission> _missions;
-        public IList<IMission> Missions { get { return _missions.AsReadOnly(); } } 
+        public IEnumerable<IMission> Missions { get { return _missions.AsReadOnly(); } }
+        public IMission CurrentMission { get; private set; }
         public int PlayerCount { get; private set; }
 
         private IPlayer _leader;
@@ -47,8 +48,8 @@ namespace Resistance
             if (State != GameState.SelectingLeader) return false;
             if (!PlayerIsInGame(leader)) return false;
 
-            State = GameState.SelectingMissionOperatives;
             Leader = leader;
+            State = GameState.WaitingForMission;
 
             return true;
         }
@@ -81,6 +82,30 @@ namespace Resistance
                 return false;
             }
             return true;
+        }
+
+        public bool StartMission(IMission nextMission)
+        {
+            if (State != GameState.WaitingForMission) return false;
+            if (!_missions.Remove(nextMission)) return false;
+
+            CurrentMission = nextMission;
+            State = GameState.SelectingMissionOperatives;
+            Task<IEnumerable<IPlayer>> task = Leader.ChooseOperatives(CurrentMission);
+            if (task!=null)
+            {
+                task.ContinueWith(completeTask => HandleOperativesChosen(completeTask.Result));
+            }
+
+            return true;
+        }
+
+        private void HandleOperativesChosen(IEnumerable<IPlayer> operatives)
+        {
+            if (OperativesChosen != null)
+            {
+                OperativesChosen(this, EventArgs.Empty);
+            }
         }
     }
 }
