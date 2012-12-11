@@ -138,6 +138,7 @@ namespace Resistance
         private void VotePassed(IEnumerable<IPlayer> operatives)
         {
             RejectedTeamsThisRound = 0;
+            State = GameState.Mission;
             if (MissionStarting != null)
             {
                 MissionStarting(this, EventArgs.Empty);
