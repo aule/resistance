@@ -16,10 +16,12 @@ namespace Resistance
         GameState State { get; }
         //int Successes { get; }
         //int Failures { get; }
+        int RejectedTeamsThisRound { get; }
 
         event EventHandler RolesAssigned;
         event EventHandler LeaderChanged;
         event EventHandler OperativesChosen;
+        event EventHandler TeamRejected;
         event EventHandler MissionStarting;
         event EventHandler MissionCompleted;
         event EventHandler GameOver;

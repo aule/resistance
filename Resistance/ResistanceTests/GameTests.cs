@@ -19,23 +19,22 @@ namespace ResistanceTests
         // Specifies the time in milliseconds to wait for asyncronous code to complete
         private const int TimeoutForAsyncCode = 100;
 
-        private Game PrepareFreshGame(IEnumerable<IPlayer> players, IEnumerable<IMission> missions)
+        private Game PrepareFreshGame(IEnumerable<IPlayer> players, IEnumerable<IMission> missions, IVote votingSystem = null)
         {
-            return new Game(players, missions);
+            return new Game(players, missions, votingSystem);
         }
 
-        private Game PrepareGameInSelectLeaderState(IEnumerable<IPlayer> players, IEnumerable<IMission> missions, IEnumerable<IPlayer> spies = null)
+        private Game PrepareGameInSelectLeaderState(IEnumerable<IPlayer> players, IEnumerable<IMission> missions, IEnumerable<IPlayer> spies = null, IVote votingSystem = null)
         {
-            Game game = new Game(players, missions);
+            Game game = PrepareFreshGame(players, missions, votingSystem);
             game.SelectSpies(spies);
             Assert.AreEqual(GameState.SelectingLeader, game.State);
             return game;
         }
 
-        private Game PrepareGameInWaitingForMissionState(IEnumerable<IPlayer> players, IEnumerable<IMission> missions, IEnumerable<IPlayer> spies = null, IPlayer leader = null)
+        private Game PrepareGameInWaitingForMissionState(IEnumerable<IPlayer> players, IEnumerable<IMission> missions, IEnumerable<IPlayer> spies = null, IPlayer leader = null, IVote votingSystem = null)
         {
-            Game game = new Game(players, missions);
-            game.SelectSpies(spies);
+            Game game = PrepareGameInSelectLeaderState(players, missions, spies, votingSystem);
             game.SelectLeader(leader ?? game.Players.First());
             Assert.AreEqual(GameState.WaitingForMission, game.State);
             return game;
@@ -64,6 +63,24 @@ namespace ResistanceTests
         private List<IMission> GenenerateMissionStubs(int missionCount)
         {
             return Enumerable.Range(1, missionCount).Select(n => GenenerateMissionStub()).ToList();
+        }
+
+        private Action<IEnumerable<IPlayer>> SetupOperativesChoiceMethod(Mock<IPlayer> leaderMock)
+        {
+            // Use a TaskCompletionSource to mock the Task representing the player choosing
+            TaskCompletionSource<IEnumerable<IPlayer>> choiceCompletionSource = new TaskCompletionSource<IEnumerable<IPlayer>>();
+            leaderMock.Setup(player => player.ChooseOperatives(It.IsAny<IMission>()))
+                      .Returns(choiceCompletionSource.Task);
+            return choiceCompletionSource.SetResult;
+        }
+
+        private Action<bool> SetupVoteResultMethod(Mock<IVote> voteMock)
+        {
+            // Use a TaskCompletionSource to mock the Task representing the vote taking place
+            TaskCompletionSource<bool> voteCompletionSource = new TaskCompletionSource<bool>();
+            voteMock.Setup(vote => vote.CallVote(It.IsAny<IEnumerable<IPlayer>>()))
+                      .Returns(voteCompletionSource.Task);
+            return voteCompletionSource.SetResult;
         }
 
         [TestMethod]
@@ -95,6 +112,13 @@ namespace ResistanceTests
         {
             Game game = PrepareFreshGame(null, null);
             Assert.AreEqual(GameState.NotReady, game.State);
+        }
+
+        [TestMethod]
+        public void RejectedTeamsThisRound_NewGame_SetToZero()
+        {
+            Game game = PrepareFreshGame(null, null);
+            Assert.AreEqual(0, game.RejectedTeamsThisRound);
         }
 
         [TestMethod]
@@ -375,11 +399,7 @@ namespace ResistanceTests
         public void StartMission_PlayerChoosesOperatives_OperativesChosenEventFired()
         {
             Mock<IPlayer> leaderMock = new Mock<IPlayer>();
-
-            // Use a TaskCompletionSource to mock the Task representing the player choosing
-            TaskCompletionSource<IEnumerable<IPlayer>> choiceCompletionSource = new TaskCompletionSource<IEnumerable<IPlayer>>();
-            leaderMock.Setup(player => player.ChooseOperatives(It.IsAny<IMission>()))
-                      .Returns(choiceCompletionSource.Task);
+            Action<IEnumerable<IPlayer>> chooseOperatives = SetupOperativesChoiceMethod(leaderMock);
 
             IPlayer leader = leaderMock.Object;
             List<IPlayer> players = GeneneratePlayerStubs(6);
@@ -391,15 +411,243 @@ namespace ResistanceTests
             // Subscribe to the event to observe it, using an AutoResetEvent to wait for async code to run
             int eventCalled = 0;
             AutoResetEvent eventTriggeredNotifier = new AutoResetEvent(false);
-            game.OperativesChosen += (o, i) => { 
+            game.OperativesChosen += (o, i) =>
+            {
                 eventCalled++;
                 eventTriggeredNotifier.Set();
             };
 
             game.StartMission(nextMission);
-            choiceCompletionSource.SetResult(Enumerable.Empty<IPlayer>());
+            chooseOperatives(Enumerable.Empty<IPlayer>());
             Assert.IsTrue(eventTriggeredNotifier.WaitOne(TimeoutForAsyncCode));
-            Assert.AreEqual(1,eventCalled);
+            Assert.AreEqual(1, eventCalled);
+        }
+
+        [TestMethod]
+        public void StartMission_PlayerChoosesOperatives_StateChangesToVoting()
+        {
+            Mock<IPlayer> leaderMock = new Mock<IPlayer>();
+            Action<IEnumerable<IPlayer>> chooseOperatives = SetupOperativesChoiceMethod(leaderMock);
+
+            IPlayer leader = leaderMock.Object;
+            List<IPlayer> players = GeneneratePlayerStubs(6);
+            players.Add(leader);
+            List<IMission> missions = GenenerateMissionStubs(5);
+            IMission nextMission = missions.Last();
+            Game game = PrepareGameInWaitingForMissionState(players, missions, leader: leader);
+
+            // Subscribe to the event using an AutoResetEvent to allow the test to wait until the event is called
+            AutoResetEvent eventTriggeredNotifier = new AutoResetEvent(false);
+            game.OperativesChosen += (o, i) => eventTriggeredNotifier.Set();
+
+            game.StartMission(nextMission);
+            chooseOperatives(Enumerable.Empty<IPlayer>());
+            Assert.IsTrue(eventTriggeredNotifier.WaitOne(TimeoutForAsyncCode));
+            Assert.AreEqual(GameState.Voting, game.State);
+        }
+
+        [TestMethod]
+        public void StartMission_PlayerChoosesOperatives_VoteCalledWithAllPlayers()
+        {
+            Mock<IPlayer> leaderMock = new Mock<IPlayer>();
+            Mock<IVote> voteMock = new Mock<IVote>();
+            Action<IEnumerable<IPlayer>> chooseOperatives = SetupOperativesChoiceMethod(leaderMock);
+
+            IPlayer leader = leaderMock.Object;
+            List<IPlayer> players = GeneneratePlayerStubs(6);
+            players.Add(leader);
+            List<IMission> missions = GenenerateMissionStubs(5);
+            IMission nextMission = missions.Last();
+            Game game = PrepareGameInWaitingForMissionState(players, missions, leader: leader, votingSystem: voteMock.Object);
+
+            // Subscribe to the event using an AutoResetEvent to allow the test to wait until the event is called
+            AutoResetEvent eventTriggeredNotifier = new AutoResetEvent(false);
+            game.OperativesChosen += (o, i) => eventTriggeredNotifier.Set();
+
+            game.StartMission(nextMission);
+            chooseOperatives(Enumerable.Empty<IPlayer>());
+            Assert.IsTrue(eventTriggeredNotifier.WaitOne(TimeoutForAsyncCode));
+            voteMock.Verify(vote => vote.CallVote(players), Times.Once());
+        }
+
+        [TestMethod]
+        public void StartMission_VoteRejected_TeamRejectedFired()
+        {
+            Mock<IPlayer> leaderMock = new Mock<IPlayer>();
+            Mock<IVote> voteMock = new Mock<IVote>();
+            Action<IEnumerable<IPlayer>> chooseOperatives = SetupOperativesChoiceMethod(leaderMock);
+            Action<bool> completeVote = SetupVoteResultMethod(voteMock);
+
+            IPlayer leader = leaderMock.Object;
+            List<IPlayer> players = GeneneratePlayerStubs(6);
+            players.Add(leader);
+            List<IMission> missions = GenenerateMissionStubs(5);
+            IMission nextMission = missions.Last();
+            Game game = PrepareGameInWaitingForMissionState(players, missions, leader: leader, votingSystem: voteMock.Object);
+
+            // Subscribe to the event using an AutoResetEvent to allow the test to wait until the event is called
+            int eventCalled = 0;
+            AutoResetEvent eventTriggeredNotifier = new AutoResetEvent(false);
+            game.TeamRejected += (o, i) =>
+            {
+                eventCalled++;
+                eventTriggeredNotifier.Set();
+            };
+
+            game.StartMission(nextMission);
+            chooseOperatives(Enumerable.Empty<IPlayer>());
+            completeVote(false);
+            Assert.IsTrue(eventTriggeredNotifier.WaitOne(TimeoutForAsyncCode));
+            Assert.AreEqual(1, eventCalled);
+        }
+
+        [TestMethod]
+        public void StartMission_VotePassed_MissionStartingFired()
+        {
+            Mock<IPlayer> leaderMock = new Mock<IPlayer>();
+            Mock<IVote> voteMock = new Mock<IVote>();
+            Action<IEnumerable<IPlayer>> chooseOperatives = SetupOperativesChoiceMethod(leaderMock);
+            Action<bool> completeVote = SetupVoteResultMethod(voteMock);
+
+            IPlayer leader = leaderMock.Object;
+            List<IPlayer> players = GeneneratePlayerStubs(6);
+            players.Add(leader);
+            List<IMission> missions = GenenerateMissionStubs(5);
+            IMission nextMission = missions.Last();
+            Game game = PrepareGameInWaitingForMissionState(players, missions, leader: leader, votingSystem: voteMock.Object);
+
+            // Subscribe to the event using an AutoResetEvent to allow the test to wait until the event is called
+            int eventCalled = 0;
+            AutoResetEvent eventTriggeredNotifier = new AutoResetEvent(false);
+            game.MissionStarting += (o, i) =>
+            {
+                eventCalled++;
+                eventTriggeredNotifier.Set();
+            };
+
+            game.StartMission(nextMission);
+            chooseOperatives(Enumerable.Empty<IPlayer>());
+            completeVote(true);
+            Assert.IsTrue(eventTriggeredNotifier.WaitOne(TimeoutForAsyncCode));
+            Assert.AreEqual(1, eventCalled);
+        }
+
+        [TestMethod]
+        public void StartMission_VoteRejected_StateChangesToSelectingLeader()
+        {
+            Mock<IPlayer> leaderMock = new Mock<IPlayer>();
+            Mock<IVote> voteMock = new Mock<IVote>();
+            Action<IEnumerable<IPlayer>> chooseOperatives = SetupOperativesChoiceMethod(leaderMock);
+            Action<bool> completeVote = SetupVoteResultMethod(voteMock);
+
+            IPlayer leader = leaderMock.Object;
+            List<IPlayer> players = GeneneratePlayerStubs(6);
+            players.Add(leader);
+            List<IMission> missions = GenenerateMissionStubs(5);
+            IMission nextMission = missions.Last();
+            Game game = PrepareGameInWaitingForMissionState(players, missions, leader: leader, votingSystem: voteMock.Object);
+
+            // Subscribe to the event using an AutoResetEvent to allow the test to wait until the event is called
+            AutoResetEvent eventTriggeredNotifier = new AutoResetEvent(false);
+            game.TeamRejected += (o, i) => eventTriggeredNotifier.Set();
+
+            game.StartMission(nextMission);
+            chooseOperatives(Enumerable.Empty<IPlayer>());
+            completeVote(false);
+            Assert.IsTrue(eventTriggeredNotifier.WaitOne(TimeoutForAsyncCode));
+            Assert.AreEqual(GameState.SelectingLeader, game.State);
+        }
+
+        [TestMethod]
+        public void StartMission_VoteRejected_MissionAddedBackToStartOfList()
+        {
+            Mock<IPlayer> leaderMock = new Mock<IPlayer>();
+            Mock<IVote> voteMock = new Mock<IVote>();
+            Action<IEnumerable<IPlayer>> chooseOperatives = SetupOperativesChoiceMethod(leaderMock);
+            Action<bool> completeVote = SetupVoteResultMethod(voteMock);
+
+            IPlayer leader = leaderMock.Object;
+            List<IPlayer> players = GeneneratePlayerStubs(6);
+            players.Add(leader);
+            List<IMission> missions = GenenerateMissionStubs(5);
+            IMission nextMission = missions.Last();
+            Game game = PrepareGameInWaitingForMissionState(players, missions, leader: leader, votingSystem: voteMock.Object);
+
+            // Subscribe to the event using an AutoResetEvent to allow the test to wait until the event is called
+            AutoResetEvent eventTriggeredNotifier = new AutoResetEvent(false);
+            game.TeamRejected += (o, i) => eventTriggeredNotifier.Set();
+
+            game.StartMission(nextMission);
+            chooseOperatives(Enumerable.Empty<IPlayer>());
+            completeVote(false);
+            Assert.IsTrue(eventTriggeredNotifier.WaitOne(TimeoutForAsyncCode));
+            Assert.AreEqual(nextMission,game.Missions.First());
+        }
+
+        [TestMethod]
+        public void RejectedTeamsThisRound_VoteRejected_IncreasesByOne()
+        {
+            Mock<IPlayer> leaderMock = new Mock<IPlayer>();
+            Mock<IVote> voteMock = new Mock<IVote>();
+            Action<IEnumerable<IPlayer>> chooseOperatives = SetupOperativesChoiceMethod(leaderMock);
+            Action<bool> completeVote = SetupVoteResultMethod(voteMock);
+
+            IPlayer leader = leaderMock.Object;
+            List<IPlayer> players = GeneneratePlayerStubs(6);
+            players.Add(leader);
+            List<IMission> missions = GenenerateMissionStubs(5);
+            IMission nextMission = missions.Last();
+            Game game = PrepareGameInWaitingForMissionState(players, missions, leader: leader, votingSystem: voteMock.Object);
+
+            // Subscribe to the event using an AutoResetEvent to allow the test to wait until the event is called
+            AutoResetEvent eventTriggeredNotifier = new AutoResetEvent(false);
+            game.TeamRejected += (o, i) => eventTriggeredNotifier.Set();
+
+            game.StartMission(nextMission);
+            chooseOperatives(Enumerable.Empty<IPlayer>());
+            completeVote(false);
+            Assert.IsTrue(eventTriggeredNotifier.WaitOne(TimeoutForAsyncCode));
+            Assert.AreEqual(1, game.RejectedTeamsThisRound);
+        }
+
+        [TestMethod]
+        public void RejectedTeamsThisRound_VotePassed_ResetToZero()
+        {
+            Mock<IPlayer> leaderMock = new Mock<IPlayer>();
+            Mock<IVote> voteMock = new Mock<IVote>();
+            Action<IEnumerable<IPlayer>> chooseOperatives = SetupOperativesChoiceMethod(leaderMock);
+            Action<bool> completeVote = SetupVoteResultMethod(voteMock);
+
+            IPlayer leader = leaderMock.Object;
+            List<IPlayer> players = GeneneratePlayerStubs(6);
+            players.Add(leader);
+            List<IMission> missions = GenenerateMissionStubs(5);
+            IMission nextMission = missions.Last();
+            Game game = PrepareGameInWaitingForMissionState(players, missions, leader: leader, votingSystem: voteMock.Object);
+
+            // Subscribe to the event using an AutoResetEvent to allow the test to wait until async voting code completes
+            AutoResetEvent eventTriggeredNotifier = new AutoResetEvent(false);
+            game.TeamRejected += (o, i) => eventTriggeredNotifier.Set();
+            game.MissionStarting += (o, i) => eventTriggeredNotifier.Set();
+
+            // Fail a vote first so the value is set to one
+            game.StartMission(nextMission);
+            chooseOperatives(Enumerable.Empty<IPlayer>());
+            completeVote(false);
+            eventTriggeredNotifier.WaitOne(TimeoutForAsyncCode);
+
+            // Set up the leader and mocks again
+            chooseOperatives = SetupOperativesChoiceMethod(leaderMock);
+            completeVote = SetupVoteResultMethod(voteMock);
+            Assert.IsTrue(game.SelectLeader(leaderMock.Object));
+
+            // Run another vote and pass it
+            game.StartMission(nextMission);
+            chooseOperatives(Enumerable.Empty<IPlayer>());
+            completeVote(true);
+
+            Assert.IsTrue(eventTriggeredNotifier.WaitOne(TimeoutForAsyncCode));
+            Assert.AreEqual(0, game.RejectedTeamsThisRound);
         }
 
     }
